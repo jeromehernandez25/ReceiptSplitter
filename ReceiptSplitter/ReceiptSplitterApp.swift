@@ -11,7 +11,7 @@ import SwiftUI
 struct ReceiptSplitterApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ReceiptsView()
         }
     }
 }
