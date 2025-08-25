@@ -11,6 +11,7 @@ struct ReceiptDetailView: View {
     @Binding var receipt: Receipt
     @State private var showingNewItem = false
     @State private var editingItem: ReceiptItem?   // for tap-to-edit
+    @FocusState private var titleFocused: Bool     // for focusing title field
 
     // MARK: - Totals
     private var itemsSubtotal: Double {
@@ -44,9 +45,9 @@ struct ReceiptDetailView: View {
 
         return subtotalsByPerson.keys.sorted().map { name in
             let subtotal = subtotalsByPerson[name] ?? 0
-
             let taxShare: Double
             let tipShare: Double
+            
             switch receipt.splitMode {
             case .proportional:
                 let r = allSubtotal > 0 ? subtotal / allSubtotal : 0
@@ -63,6 +64,13 @@ struct ReceiptDetailView: View {
 
     var body: some View {
         List {
+            // RECEIPT TITLE (editable at top)
+            Section {
+                TextField("Receipt Title", text: $receipt.title)
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .focused($titleFocused)
+            }
 
             // ITEMS
             Section("Items") {
