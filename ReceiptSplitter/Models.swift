@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct ReceiptItem: Identifiable, Codable {
+struct ReceiptItem: Identifiable, Codable, Hashable {
     var id = UUID()
     var name: String
     var price: Double
@@ -22,7 +22,7 @@ enum SplitMode: String, CaseIterable, Codable, Identifiable {
     var id: String { rawValue }
 }
 
-struct Receipt: Identifiable, Codable {
+struct Receipt: Identifiable, Codable, Hashable {
     var id = UUID()
     var title: String
     var tax: Double

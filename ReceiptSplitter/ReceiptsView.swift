@@ -9,35 +9,55 @@ import SwiftUI
 
 struct ReceiptsView: View {
     @State private var receipts: [Receipt] = []
-    @State private var showingNewReceipt = false
+    @State private var path = NavigationPath()   // for navigation
 
     var body: some View {
-        NavigationView {
+        NavigationStack(path: $path) {
             List {
                 ForEach(receipts) { receipt in
-                    NavigationLink(destination: ReceiptDetailView(receipt: binding(for: receipt))) {
-                        Text(receipt.title)
+                    NavigationLink(value: receipt) {
+                        Text(receipt.title.isEmpty ? "Untitled Receipt" : receipt.title)
                     }
                 }
+                .onDelete(perform: deleteReceipt)
             }
             .navigationTitle("Receipts")
             .toolbar {
-                Button(action: { showingNewReceipt = true }) {
-                    Image(systemName: "plus")
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        // Create a blank receipt
+                        let newReceipt = Receipt(
+                            title: "",
+                            tax: 0,
+                            tip: 0,
+                            items: []
+                        )
+                        receipts.append(newReceipt)
+
+                        // Navigate directly to its detail view
+                        path.append(newReceipt)
+                    } label: {
+                        Image(systemName: "plus")
+                    }
                 }
             }
-            .sheet(isPresented: $showingNewReceipt) {
-                NewReceiptView(onSave: { newReceipt in
-                    receipts.append(newReceipt)
-                })
+            .navigationDestination(for: Receipt.self) { receipt in
+                ReceiptDetailView(
+                    receipt: binding(for: receipt)
+                )
             }
         }
     }
 
+    // Helper to get a binding for editing a receipt
     private func binding(for receipt: Receipt) -> Binding<Receipt> {
         guard let index = receipts.firstIndex(where: { $0.id == receipt.id }) else {
             fatalError("Receipt not found")
         }
         return $receipts[index]
+    }
+
+    private func deleteReceipt(at offsets: IndexSet) {
+        receipts.remove(atOffsets: offsets)
     }
 }
