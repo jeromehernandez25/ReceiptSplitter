@@ -103,20 +103,22 @@ struct ReceiptDetailView: View {
                 HStack {
                     Text("Tax")
                     Spacer()
-                    TextField("0.00", value: $receipt.tax, format: .number)
+                    TextField("0.00", value: $receipt.tax, format: .currency(code: "USD"))
                         .keyboardType(.decimalPad)
                         .multilineTextAlignment(.trailing)
-                        .frame(minWidth: 80)
+                        .frame(minWidth: 100)
                 }
+                
 
                 HStack {
                     Text("Tip")
                     Spacer()
-                    TextField("0.00", value: $receipt.tip, format: .number)
+                    TextField("0.00", value: $receipt.tip, format: .currency(code: "USD"))
                         .keyboardType(.decimalPad)
                         .multilineTextAlignment(.trailing)
-                        .frame(minWidth: 80)
+                        .frame(minWidth: 100)
                 }
+
 
                 HStack {
                     Text("Grand Total")
