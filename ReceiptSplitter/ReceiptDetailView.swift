@@ -10,89 +10,154 @@ import SwiftUI
 struct ReceiptDetailView: View {
     @Binding var receipt: Receipt
     @State private var showingNewItem = false
-    @State private var editingItem: ReceiptItem?   // track which item is being edited
+    @State private var editingItem: ReceiptItem?   // for tap-to-edit
+
+    // MARK: - Totals
+    private var itemsSubtotal: Double {
+        receipt.items.reduce(0) { $0 + $1.price }
+    }
+    private var grandTotal: Double {
+        itemsSubtotal + receipt.tax + receipt.tip
+    }
+
+    // Local type for UI
+    private struct PersonRow: Identifiable {
+        var id: String { name }
+        let name: String
+        let subtotal: Double
+        let taxShare: Double
+        let tipShare: Double
+        var total: Double { subtotal + taxShare + tipShare }
+    }
+
+    // Compute per-person totals using the *current* split mode
+    private var perPersonRows: [PersonRow] {
+        // subtotal by person (group by item.person)
+        let subtotalsByPerson: [String: Double] = Dictionary(
+            grouping: receipt.items, by: { $0.person.trimmingCharacters(in: .whitespaces) }
+        ).mapValues { items in
+            items.reduce(0) { $0 + $1.price }
+        }
+
+        let allSubtotal = subtotalsByPerson.values.reduce(0, +)
+        let peopleCount = max(subtotalsByPerson.keys.count, 0)
+
+        return subtotalsByPerson.keys.sorted().map { name in
+            let subtotal = subtotalsByPerson[name] ?? 0
+
+            let taxShare: Double
+            let tipShare: Double
+            switch receipt.splitMode {
+            case .proportional:
+                let r = allSubtotal > 0 ? subtotal / allSubtotal : 0
+                taxShare = receipt.tax * r
+                tipShare = receipt.tip * r
+            case .equal:
+                taxShare = peopleCount > 0 ? receipt.tax / Double(peopleCount) : 0
+                tipShare = peopleCount > 0 ? receipt.tip / Double(peopleCount) : 0
+            }
+
+            return PersonRow(name: name, subtotal: subtotal, taxShare: taxShare, tipShare: tipShare)
+        }
+    }
 
     var body: some View {
         List {
-            // Items section
+
+            // ITEMS
             Section("Items") {
-                ForEach(receipt.items) { item in
-                    Button {
-                        editingItem = item   // open edit sheet
-                    } label: {
-                        VStack(alignment: .leading) {
-                            Text(item.name)
-                                .font(.headline)
-                            HStack {
-                                Text("Price: $\(item.price, specifier: "%.2f")")
-                                Spacer()
-                                Text("Person: \(item.person)")
-                            }
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
+                ForEach($receipt.items) { $item in
+                    HStack(alignment: .center) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(item.name).font(.headline)
+                            Text(item.person)
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
                         }
+                        Spacer()
+                        Text("$\(item.price, specifier: "%.2f")")
+                        Toggle("Paid", isOn: $item.paid).labelsHidden()
                     }
+                    .contentShape(Rectangle())        // makes entire row tappable
+                    .onTapGesture { editingItem = item } // open edit sheet
                 }
-                .onDelete { indices in
-                    receipt.items.remove(atOffsets: indices)
+                .onDelete { offsets in
+                    receipt.items.remove(atOffsets: offsets)
+                }
+
+                Button {
+                    showingNewItem = true
+                } label: {
+                    Label("Add Item", systemImage: "plus.circle")
                 }
             }
 
-            // Summary section
+            // SUMMARY (editable tax/tip)
             Section("Summary") {
+                HStack {
+                    Text("Items Subtotal")
+                    Spacer()
+                    Text("$\(itemsSubtotal, specifier: "%.2f")")
+                }
+
                 HStack {
                     Text("Tax")
                     Spacer()
-                    Text("$\(receipt.tax, specifier: "%.2f")")
+                    TextField("0.00", value: $receipt.tax, format: .number)
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.trailing)
+                        .frame(minWidth: 80)
                 }
+
                 HStack {
                     Text("Tip")
                     Spacer()
-                    Text("$\(receipt.tip, specifier: "%.2f")")
+                    TextField("0.00", value: $receipt.tip, format: .number)
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.trailing)
+                        .frame(minWidth: 80)
                 }
+
                 HStack {
-                    Text("Total")
+                    Text("Grand Total")
                     Spacer()
-                    let total = receipt.items.reduce(0) { $0 + $1.price } + receipt.tax + receipt.tip
-                    Text("$\(total, specifier: "%.2f")")
+                    Text("$\(grandTotal, specifier: "%.2f")")
                         .bold()
                 }
             }
 
-            // Per-person totals
+            // PER-PERSON TOTALS
             Section("Per-Person Totals") {
-                ForEach(receipt.personTotals) { personTotal in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(personTotal.name)
-                            .font(.headline)
+                ForEach(perPersonRows) { row in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(row.name).font(.headline)
                         HStack {
-                            Text("Subtotal:")
+                            Text("Subtotal")
                             Spacer()
-                            Text("$\(personTotal.subtotal, specifier: "%.2f")")
+                            Text("$\(row.subtotal, specifier: "%.2f")")
                         }
                         HStack {
-                            Text("Tax share:")
+                            Text("Tax share")
                             Spacer()
-                            Text("$\(personTotal.taxShare, specifier: "%.2f")")
+                            Text("$\(row.taxShare, specifier: "%.2f")")
                         }
                         HStack {
-                            Text("Tip share:")
+                            Text("Tip share")
                             Spacer()
-                            Text("$\(personTotal.tipShare, specifier: "%.2f")")
+                            Text("$\(row.tipShare, specifier: "%.2f")")
                         }
                         Divider()
                         HStack {
-                            Text("Total Owed:")
+                            Text("Total Owed")
                             Spacer()
-                            Text("$\(personTotal.total, specifier: "%.2f")")
-                                .bold()
+                            Text("$\(row.total, specifier: "%.2f")").bold()
                         }
                     }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 2)
                 }
             }
 
-            // Split mode picker
+            // SPLIT OPTIONS
             Section("Split Options") {
                 Picker("Tax & Tip Split", selection: $receipt.splitMode) {
                     ForEach(SplitMode.allCases) { mode in
@@ -104,11 +169,7 @@ struct ReceiptDetailView: View {
         }
         .navigationTitle(receipt.title)
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button(action: { showingNewItem = true }) {
-                    Label("Add Item", systemImage: "plus")
-                }
-            }
+            ToolbarItem(placement: .navigationBarTrailing) { EditButton() }
         }
         // New item sheet
         .sheet(isPresented: $showingNewItem) {
@@ -122,11 +183,11 @@ struct ReceiptDetailView: View {
         }
     }
 
-    // Helper to bind the right item for editing
+    // Bind the correct array element for editing
     private func binding(for item: ReceiptItem) -> Binding<ReceiptItem> {
-        guard let index = receipt.items.firstIndex(where: { $0.id == item.id }) else {
-            fatalError("Item not found")
+        guard let idx = receipt.items.firstIndex(where: { $0.id == item.id }) else {
+            fatalError("Editing item not found")
         }
-        return $receipt.items[index]
+        return $receipt.items[idx]
     }
 }
