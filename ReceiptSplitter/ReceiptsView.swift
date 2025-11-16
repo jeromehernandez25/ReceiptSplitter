@@ -3,7 +3,7 @@
 //  ReceiptSplitter
 //
 //  Created by Jerome Hernandez on 8/21/25.
-//
+//  Holds lists of receipts
 
 import SwiftUI
 
@@ -23,13 +23,14 @@ struct ReceiptsView: View {
             }
             .navigationTitle("Receipts")
             .toolbar {
-                ToolbarItem(placement: .primaryAction) {
+                ToolbarItem(placement: .primaryAction) {    // when tapped, creates and appends new receipt item
                     Button {
                         // Create a blank receipt
                         let newReceipt = Receipt(
                             title: "",
                             tax: 0,
                             tip: 0,
+                            people: [],
                             items: []
                         )
                         receipts.append(newReceipt)

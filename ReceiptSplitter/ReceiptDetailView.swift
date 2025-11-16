@@ -3,7 +3,8 @@
 //  ReceiptSplitter
 //
 //  Created by Jerome Hernandez on 8/21/25.
-//
+//  Show details for a single receipt including people responsible, items,
+//  tax/tip, splitt settings, and calculated totals for each person
 
 import SwiftUI
 
@@ -15,6 +16,7 @@ struct ReceiptDetailView: View {
 
     // MARK: - Totals
     private var itemsSubtotal: Double {
+        // Sum of all item prices (note: items may be split across people)
         receipt.items.reduce(0) { $0 + $1.price }
     }
     private var grandTotal: Double {
@@ -23,42 +25,32 @@ struct ReceiptDetailView: View {
 
     // Local type for UI
     private struct PersonRow: Identifiable {
-        var id: String { name }
+        var id: UUID { personId }
+        let personId: UUID
         let name: String
         let subtotal: Double
         let taxShare: Double
         let tipShare: Double
         var total: Double { subtotal + taxShare + tipShare }
+        var paid: Bool
     }
 
-    // Compute per-person totals using the *current* split mode
+    // Compute per-person rows using receipt.personTotals and reflect paid state
     private var perPersonRows: [PersonRow] {
-        // subtotal by person (group by item.person)
-        let subtotalsByPerson: [String: Double] = Dictionary(
-            grouping: receipt.items, by: { $0.person.trimmingCharacters(in: .whitespaces) }
-        ).mapValues { items in
-            items.reduce(0) { $0 + $1.price }
-        }
+        let totals = receipt.personTotals
+        // Build mapping id -> paid status & name (from receipt.people)
+        let paidById: [UUID: Bool] = Dictionary(uniqueKeysWithValues: receipt.people.map { ($0.id, $0.paid) })
+        let namesById: [UUID: String] = Dictionary(uniqueKeysWithValues: receipt.people.map { ($0.id, $0.name) })
 
-        let allSubtotal = subtotalsByPerson.values.reduce(0, +)
-        let peopleCount = max(subtotalsByPerson.keys.count, 0)
-
-        return subtotalsByPerson.keys.sorted().map { name in
-            let subtotal = subtotalsByPerson[name] ?? 0
-            let taxShare: Double
-            let tipShare: Double
-            
-            switch receipt.splitMode {
-            case .proportional:
-                let r = allSubtotal > 0 ? subtotal / allSubtotal : 0
-                taxShare = receipt.tax * r
-                tipShare = receipt.tip * r
-            case .equal:
-                taxShare = peopleCount > 0 ? receipt.tax / Double(peopleCount) : 0
-                tipShare = peopleCount > 0 ? receipt.tip / Double(peopleCount) : 0
-            }
-
-            return PersonRow(name: name, subtotal: subtotal, taxShare: taxShare, tipShare: tipShare)
+        return totals.map { t in
+            PersonRow(
+                personId: t.personId,
+                name: namesById[t.personId] ?? t.name,
+                subtotal: t.subtotal,
+                taxShare: t.taxShare,
+                tipShare: t.tipShare,
+                paid: paidById[t.personId] ?? false
+            )
         }
     }
 
@@ -71,6 +63,36 @@ struct ReceiptDetailView: View {
                     .fontWeight(.bold)
                     .focused($titleFocused)
             }
+            
+            // PEOPLE RESPONSIBLE
+            Section("People Responsible") {
+                ForEach($receipt.people) { $person in
+                    HStack {
+                        TextField("Name", text: $person.name)
+                        Spacer()
+                        Toggle("Paid", isOn: $person.paid)
+                            .labelsHidden()
+                    }
+                }
+                .onDelete { offsets in
+                    // Remove person and also remove references from items
+                    let idsToRemove = offsets.map { receipt.people[$0].id }
+                    receipt.people.remove(atOffsets: offsets)
+                    for id in idsToRemove {
+                        // Remove the person from any items that referenced them
+                        for idx in receipt.items.indices {
+                            receipt.items[idx].people.removeAll { $0 == id }
+                        }
+                    }
+                }
+
+                Button {
+                    receipt.people.append(Person(name: ""))
+                } label: {
+                    Label("Add Person", systemImage: "plus")
+                }
+            }
+
 
             // ITEMS
             Section("Items") {
@@ -78,16 +100,21 @@ struct ReceiptDetailView: View {
                     HStack(alignment: .center) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(item.name).font(.headline)
-                            Text(item.person)
+                            // Show comma-separated list of assigned people
+                            let assignedNames = item.people.compactMap { pid in
+                                receipt.people.first(where: { $0.id == pid })?.name
+                            }.joined(separator: ", ")
+                            Text(assignedNames.isEmpty ? "Unassigned" : assignedNames)
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                         }
                         Spacer()
                         Text("$\(item.price, specifier: "%.2f")")
-                        Toggle("Paid", isOn: $item.paid).labelsHidden()
                     }
-                    .contentShape(Rectangle())        // makes entire row tappable
-                    .onTapGesture { editingItem = item } // open edit sheet
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        editingItem = item
+                    }
                 }
                 .onDelete { offsets in
                     receipt.items.remove(atOffsets: offsets)
@@ -140,7 +167,14 @@ struct ReceiptDetailView: View {
             Section("Per-Person Totals") {
                 ForEach(perPersonRows) { row in
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(row.name).font(.headline)
+                        HStack {
+                            Text(row.name).font(.headline)
+                            Spacer()
+                            if row.paid {
+                                Label("Paid", systemImage: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                            }
+                        }
                         HStack {
                             Text("Subtotal")
                             Spacer()
@@ -183,13 +217,13 @@ struct ReceiptDetailView: View {
         }
         // New item sheet
         .sheet(isPresented: $showingNewItem) {
-            NewItemView { newItem in
+            NewItemView(people: receipt.people) { newItem in
                 receipt.items.append(newItem)
             }
         }
         // Edit item sheet
         .sheet(item: $editingItem) { item in
-            EditItemView(item: binding(for: item))
+            EditItemView(item: binding(for: item), people: receipt.people)
         }
     }
 
